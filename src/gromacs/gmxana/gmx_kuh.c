@@ -289,7 +289,7 @@ static gmx_bool read_cont_dists( const char* fname, int *gnx,
    snew(d,ncont) ;
 
    i=ci=0 ;
-   while ( fscanf(fp,"%d,%d,%f",&ai,&aj,&rij) == 3 && ci < ncont )
+   while ( fscanf(fp,"%d %d %f",&ai,&aj,&rij) == 3 && ci < ncont )
    {
       idx[i++] = ai-1 ; // index uses 0..N-1
       idx[i++] = aj-1 ;
@@ -1171,10 +1171,12 @@ static void do_contacts(const char *fn,
 	    sum=0 ;
 	    for (ri=0;ri<nres;++ri) {
 	       sumi=0;
-	       for (rj=ri+1;rj<nres;++rj) {
+	       for (rj=0;rj<nres;++rj) { // FIXME check BUGFIX 030813, was ri+1
 		  if (resrescont[ri*nres+rj]>0)
 		     ++sumi ;
 	       }
+	       if (rescont)
+		  if (sumi>0) ++rescont[ri] ; // FIXME check! addition 030713
 	       if (rnout)
 		  fprintf(rnout," %d",sumi) ;
 	       sum += sumi ;
@@ -1182,7 +1184,7 @@ static void do_contacts(const char *fn,
 	    if (rnout)
 	       fprintf(rnout,"\n") ;
 	    if (rout)
-	       fprintf(rout," %d\n",sum) ;
+	       fprintf(rout," %d\n",sum/2) ; // FIXME BUGFIX 030813, added /2
 	 }
 	 if (riout)
 	 {
@@ -1225,7 +1227,7 @@ static void do_contacts(const char *fn,
 		  ddata->resnums1, ddata->resnums2,
 		  ddata->resdists ) ;
 
-	 if (denscont)
+	 if (denscont) {
 	    if (eAvgAtmRes == ddata->avgsel || eAvgResRes == ddata->avgsel)
 	    {
 	       for (ri=0;ri<ddata->resdists->size2;++ri)
@@ -1236,6 +1238,7 @@ static void do_contacts(const char *fn,
 	       for (ri=0;ri<ddata->resdists->size2;++ri)
 		  denscont[ri] = atmcont[ddata->resdists->members2[ri]] ;
 	    }
+	 }
 
 	 switch (ddata->dfunc)
 	 {
@@ -1390,6 +1393,7 @@ int gmx_kuh(int argc,char *argv[])
    static real cutval ;
    static real kappa_tanh = 0.0 ;
    static gmx_bool bFilt = FALSE ;
+   static gmx_bool bPBC = FALSE ;
 
    static gmx_bool bGroups = FALSE, bG1std = TRUE, bG2std = TRUE ;
    static gmx_bool bSumRes = FALSE ;
@@ -1409,6 +1413,7 @@ int gmx_kuh(int argc,char *argv[])
 	 "for individual contacts" },
       { "-times", FALSE, etBOOL, {&bTimes},
 	 "print times into output file"   },
+      { "-pbc", FALSE, etBOOL, {&bPBC}, "force PBC (XYZ), or NONE" },
       { "-kappa", FALSE, etREAL, {&kappa_tanh}, "kappa for continuous Q" },
       { "-groups", FALSE, etBOOL, {&bGroups}, "define groups" },
       { "-g1std", FALSE, etBOOL, {&bG1std}, "use built-in groups for group 1" },
@@ -1497,7 +1502,16 @@ int gmx_kuh(int argc,char *argv[])
    init_t_atoms(&atoms,natoms,TRUE);
    snew(xn,natoms);
    read_stx_conf( ftp2fn(efSTX,NFILE,fnm), title, &atoms, xn, NULL, &ePBC, box);
-   //ePBC = -1 ;
+   if (opt2parg_bSet("-pbc",asize(pa),pa)) {
+      if (bPBC) {
+	 fprintf(stderr,"manually setting PBC to XYZ\n");
+	 ePBC = epbcXYZ ;
+      }
+      else {
+	 fprintf(stderr,"manually setting PBC to NONE\n");
+	 ePBC = epbcNONE ;
+      }
+   }
 
    bDensity = opt2bSet("-d",NFILE,fnm) ;
    if (bGroups && !(bDensity || bFilt)) {
@@ -1571,7 +1585,7 @@ int gmx_kuh(int argc,char *argv[])
       if (bSumRes)
 	 if (eAvgResAtm == avgsel || eAvgResRes == avgsel) {
 	    fprintf( stderr,
-		  "already aggregating to residue, deactivating -sum2res");
+		  "already aggregating to residue, deactivating -sum2res\n");
 	    bSumRes = FALSE ;
 	 }  
 
@@ -1607,10 +1621,10 @@ int gmx_kuh(int argc,char *argv[])
    bCalcDist = TRUE ;
    if ( opt2bSet( "-nc", NFILE, fnm ) )
       if ( opt2bSet( "-n", NFILE, fnm ) ) {
-	 fprintf(stderr, "both -n and -nc given, using -n with calc. dists.");
+	 fprintf(stderr, "both -n and -nc given, using -n with calc. dists.\n");
       }
       else {
-	 fprintf(stderr, "-nc given, reading contact distances") ;
+	 fprintf(stderr, "-nc given, reading contact distances\n") ;
 	 bCalcDist = FALSE ;
       }
    else
